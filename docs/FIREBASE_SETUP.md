@@ -203,3 +203,56 @@ GitHub ActionsのRepository secretsが未登録です。6つのSecretsを登録�
 - Firebase Consoleの使用量アラートを設定
 - 不要になったカードの自動削除方針を決める
 - 不正な大量カード作成への対策としてApp Checkやレート制限を検討
+
+## 13. 友達・誕生日機能
+
+アカウント登録時に、ニックネームと誕生日をプロフィールへ保存します。登録後は「友達」画面に表示される友達コードを交換して友達を追加します。
+
+### 友達コードの使い方
+
+1. 自分の「友達」画面を開く
+2. 「あなたの友達コード」を確認
+3. 友達にコードを共有
+4. 友達側の「友達」画面で「友達を追加」を押す
+5. コードを入力
+
+追加すると双方の友達一覧に登録されます。友達一覧は誕生日が近い順に並びます。
+
+### カードの送信相手を選ぶ
+
+「カードをつくる」を開くと、友達一覧に登録された友達が表示されます。誕生日が近い友達を選択してから、メッセージとカードテーマを入力します。
+
+カードには次の情報が保存されます。
+
+- `recipientId`
+- `to`
+- `message`
+- `theme`
+- `sender`
+- `ownerId`
+- `createdAt`
+
+### Firestoreのデータ構造
+
+```text
+users/{userId}
+  nickname
+  birthday
+  friendCode
+
+users/{userId}/friends/{friendId}
+  nickname
+  birthday
+  friendCode
+
+cards/{cardId}
+  recipientId
+  to
+  message
+  theme
+  sender
+  ownerId
+  createdAt
+```
+
+既存ユーザーで、プロフィールがまだ存在しない場合は、ログイン時にプロフィールを自動作成します。ただし既存ユーザーの誕生日は空欄になるため、必要ならFirebase Consoleで`users/{userId}`の`birthday`を入力してください。
