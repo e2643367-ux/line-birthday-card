@@ -6,12 +6,14 @@ service cloud.firestore {
       allow create, update: if request.auth != null && request.auth.uid == userId;
       match /friends/{friendId} {
         allow read: if request.auth != null && request.auth.uid == userId;
-        // 友達追加時は、追加する側と追加される側の双方の友達リストへ書き込みます。
         allow create: if request.auth != null
           && request.resource.data.nickname is string
           && request.resource.data.birthday is string
           && request.resource.data.friendCode is string;
-        allow update, delete: if request.auth != null && request.auth.uid == userId;
+        allow update: if request.auth != null
+          && (request.auth.uid == userId
+            || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.friendCode == resource.data.friendCode);
+        allow delete: if request.auth != null && request.auth.uid == userId;
       }
     }
     match /cards/{cardId} {

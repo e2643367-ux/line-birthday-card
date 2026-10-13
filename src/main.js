@@ -86,6 +86,37 @@ async function handleAuthSubmit(event) {
   } catch (err) { error.textContent = '入力内容を確認してください。登録できない場合は別のメールアドレスをお試しください。'; }
 }
 
+async function settingsView() {
+  const user = activeUser();
+  if (!user) { renderShell(authView(), 'home'); return; }
+  const profile = await getProfile(user);
+  renderShell(`<section class="settings-page"><div class="page-heading"><div><p class="eyebrow"><span class="eyebrow-line"></span> your account</p><h2>アカウント<em>設定。</em></h2><p>ニックネームと誕生日は、いつでも変更できます。</p></div><div class="settings-avatar">${escapeHTML((profile.nickname || profile.displayName || '？').slice(0, 1))}</div></div><form id="profile-form" class="settings-form"><div class="settings-section"><div><span class="settings-label">PROFILE</span><h3>プロフィール</h3><p>友達に表示される情報です。</p></div><div class="settings-fields"><label>ニックネーム<input name="nickname" maxlength="20" required value="${escapeHTML(profile.nickname || profile.displayName || '')}" placeholder="例：ゆうた"></label><label>誕生日<input name="birthday" type="date" value="${escapeHTML(profile.birthday || '')}" required><small>友達の誕生日一覧に表示されます</small></label><label>メールアドレス<input value="${escapeHTML(profile.email || '')}" disabled><small>メールアドレスはログインに使用します</small></label></div></div><div class="settings-section settings-code"><div><span class="settings-label">FRIEND CODE</span><h3>友達コード</h3><p>このコードを友達に共有して追加してもらえます。</p></div><div><strong>${escapeHTML(profile.friendCode || '未発行')}</strong><button type="button" class="text-link" data-action="copy" data-url="${escapeHTML(profile.friendCode || '')}">コードをコピー</button></div></div><p class="settings-message" id="settings-message"></p><div class="settings-footer"><button type="submit" class="button button-primary">変更を保存 <span>↗</span></button><button type="button" class="button button-ghost" data-action="logout">ログアウト</button></div></form></section>`, 'home');
+  document.querySelector('#profile-form').addEventListener('submit', handleProfileSubmit);
+}
+
+async function handleProfileSubmit(event) {
+  event.preventDefault();
+  const user = activeUser();
+  const data = Object.fromEntries(new FormData(event.target));
+  const message = document.querySelector('#settings-message');
+  try {
+    if (isFirebaseConfigured) {
+      await updateProfile(auth.currentUser, { displayName: data.nickname });
+      await setDoc(doc(db, 'users', user.uid), { nickname: data.nickname, birthday: data.birthday, friendCode: user.friendCode || friendCode() }, { merge: true });
+      const friendSnapshot = await getDocs(collection(db, 'users', user.uid, 'friends'));
+      await Promise.all(friendSnapshot.docs.map((friend) => setDoc(doc(db, 'users', friend.id, 'friends', user.uid), { nickname: data.nickname, birthday: data.birthday, friendCode: user.friendCode }, { merge: true })));
+      currentUser = { ...currentUser, displayName: data.nickname, nickname: data.nickname, birthday: data.birthday };
+    } else {
+      const updated = { ...user, nickname: data.nickname, displayName: data.nickname, birthday: data.birthday };
+      saveDemoUser(updated); currentUser = updated;
+      saveDemoFriends(getDemoFriends().map((friend) => friend.id === user.uid ? { ...friend, nickname: data.nickname, birthday: data.birthday } : friend));
+    }
+    message.textContent = 'プロフィールを保存しました。';
+    message.classList.add('is-success');
+    setTimeout(() => settingsView(), 900);
+  } catch (error) { message.textContent = '保存できませんでした。入力内容とFirebaseルールを確認してください。'; }
+}
+
 async function addFriend() {
   const code = prompt('友達から教えてもらった友達コードを入力してください');
   if (!code) return;
@@ -109,9 +140,9 @@ async function addFriend() {
 async function handleCardSubmit(event) { event.preventDefault(); const data = Object.fromEntries(new FormData(event.target)); const user = activeUser(); const card = { ...data, sender: user.displayName || user.nickname, createdAt: new Date().toISOString() }; let id; if (isFirebaseConfigured) { const ref = await addDoc(collection(db, 'cards'), { ...card, ownerId: user.uid, createdAt: serverTimestamp() }); id = ref.id; } else { id = uid(); const cards = getDemoCards(); cards[id] = card; saveDemoCards(cards); } location.hash = `#card/${id}`; route(); }
 async function cardView(id) { let card; if (isFirebaseConfigured) { const snapshot = await getDoc(doc(db, 'cards', id)); if (snapshot.exists()) card = snapshot.data(); } else card = getDemoCards()[id]; if (!card) { renderShell(`<section class="empty-page"><div class="empty-icon">?</div><h2>カードが見つかりません</h2><p>リンクが正しいか、もう一度確認してみてください。</p><a class="button button-primary" href="#home">ホームへ戻る</a></section>`); return; } renderShell(`<section class="received-page"><p class="eyebrow centered"><span class="eyebrow-line"></span> a card for you <span class="eyebrow-line"></span></p><p class="received-lead">${escapeHTML(card.to)}さんへ</p><div class="received-card ${escapeHTML(card.theme || 'lemon')}"><div class="received-card-top"><span>birthday.card</span><span>♡</span></div><div class="received-spark">✦</div><h1>Happy<br><i>Birthday</i></h1><div class="message">${escapeHTML(card.message).replace(/\n/g, '<br>')}</div><div class="received-from">— ${escapeHTML(card.sender)}より</div></div><p class="received-foot">このカードは、あなたのためにつくられました。</p><div class="received-actions"><a href="#create" class="button button-primary">自分もカードをつくる <span>↗</span></a><button class="text-link" data-action="copy" data-url="${escapeHTML(shareUrl(id))}">リンクをコピー</button></div></section>`); burst(); }
 
-function bindCommonEvents() { document.querySelectorAll('[data-action="auth"]').forEach((el) => el.addEventListener('click', () => { renderShell(authView()); })); document.querySelectorAll('[data-action="account"]').forEach((el) => el.addEventListener('click', () => { if (confirm('ログアウトしますか？')) { if (isFirebaseConfigured) signOut(auth); else { localStorage.removeItem(demoUserKey); currentUser = null; } route(); } })); document.querySelectorAll('[data-action="copy"]').forEach((el) => el.addEventListener('click', async () => { await navigator.clipboard?.writeText(el.dataset.url); el.textContent = 'コピーしました ✓'; })); document.querySelectorAll('[data-action="add-friend"]').forEach((el) => el.addEventListener('click', addFriend)); const authForm = document.querySelector('#auth-form'); if (authForm) bindAuth(); }
+function bindCommonEvents() { document.querySelectorAll('[data-action="auth"]').forEach((el) => el.addEventListener('click', () => { renderShell(authView()); })); document.querySelectorAll('[data-action="account"]').forEach((el) => el.addEventListener('click', () => { location.hash = '#settings'; route(); })); document.querySelectorAll('[data-action="logout"]').forEach((el) => el.addEventListener('click', () => { if (confirm('ログアウトしますか？')) { if (isFirebaseConfigured) signOut(auth); else { localStorage.removeItem(demoUserKey); currentUser = null; } route(); } })); document.querySelectorAll('[data-action="copy"]').forEach((el) => el.addEventListener('click', async () => { await navigator.clipboard?.writeText(el.dataset.url); el.textContent = 'コピーしました ✓'; })); document.querySelectorAll('[data-action="add-friend"]').forEach((el) => el.addEventListener('click', addFriend)); const authForm = document.querySelector('#auth-form'); if (authForm) bindAuth(); }
 function bindAuth() { const form = document.querySelector('#auth-form'); if (!form) return; document.querySelectorAll('[data-auth-mode]').forEach((tab) => tab.addEventListener('click', () => { document.querySelectorAll('[data-auth-mode]').forEach((item) => item.classList.remove('is-active')); tab.classList.add('is-active'); const signup = tab.dataset.authMode === 'signup'; form.dataset.mode = signup ? 'signup' : 'login'; document.querySelector('.signup-only').hidden = !signup; document.querySelectorAll('.signup-only input').forEach((input) => { input.required = signup; }); document.querySelector('#auth-submit').innerHTML = signup ? 'アカウントをつくる <span>↗</span>' : 'ログインする <span>↗</span>'; })); form.addEventListener('submit', handleAuthSubmit); }
 function burst() { for (let i = 0; i < 18; i += 1) { const piece = document.createElement('i'); piece.className = 'burst-piece'; piece.style.setProperty('--x', `${Math.random() * 100 - 50}px`); piece.style.setProperty('--r', `${Math.random() * 360}deg`); piece.style.setProperty('--d', `${Math.random() * .5}s`); piece.textContent = i % 2 ? '•' : '✦'; document.body.append(piece); setTimeout(() => piece.remove(), 1500); } }
-function route() { const hash = location.hash.slice(1) || 'home'; if (hash.startsWith('card/')) cardView(hash.split('/')[1]); else if (hash.startsWith('create')) createView(); else if (hash === 'friends') friendsView(); else homeView(); }
+function route() { const hash = location.hash.slice(1) || 'home'; if (hash.startsWith('card/')) cardView(hash.split('/')[1]); else if (hash.startsWith('create')) createView(); else if (hash === 'friends') friendsView(); else if (hash === 'settings') settingsView(); else homeView(); }
 if (isFirebaseConfigured) onAuthStateChanged(auth, async (user) => { currentUser = user ? await getProfile(user) : null; route(); }); else { currentUser = getDemoUser(); route(); }
 window.addEventListener('hashchange', route);
