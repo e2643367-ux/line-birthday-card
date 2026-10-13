@@ -15,6 +15,13 @@ service cloud.firestore {
             || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.friendCode == resource.data.friendCode);
         allow delete: if request.auth != null && request.auth.uid == userId;
       }
+      match /receivedCards/{cardId} {
+        allow read: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null
+          && request.resource.data.ownerId == request.auth.uid
+          && request.resource.data.recipientId == userId;
+        allow update, delete: if request.auth != null && request.auth.uid == userId;
+      }
     }
     match /cards/{cardId} {
       allow read: if true;
